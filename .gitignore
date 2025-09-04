@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+# Python
+__pycache__/
+*.pyc
+# Notebooks
+.ipynb_checkpoints/
+# Build/output
+build/
+dist/
+# Data you don't want tracked
+*.tmp
