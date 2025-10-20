@@ -29,4 +29,4 @@ Hadaeghi, Fatemeh, et al. "A computational perspective on the no-strong-loops pr
 link: [https://www.biorxiv.org/content/10.1101/2025.09.24.678310v1]
 
 Hadaeghi, Fatemeh, Kayson Fakhar, and Claus Christian Hilgetag. "Controlling Reciprocity in Binary and Weighted Networks: A Novel Density-Conserving Approach." bioRxiv (2024).
-link: [https://www.biorxiv.org/content/10.1101/2024.11.24.625064v1]
+link: [https://www.biorxiv.org/content/10.1101/2024.11.24.625064v2]
