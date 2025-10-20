@@ -2,7 +2,7 @@
 
 This repository contains the source code used to assess the computational implications of reciprocity gradients in binary and weighted neural networks. The findings are discussed in the accompanying manuscript.
 
-The NRC algorithms, available in the utils directory and also accessible in the [NRC_binary_and_weighted_Network_Reciprocity_Control](https://github.com/m00rcheh/NRC_binary_and_weighted_Network_Reciprocity_Control) repository, were used to control the degree of asymmetry and reciprocity in both binary and weighted networks while preserving key network properties.
+The NRC algorithms, available in the `utils` script and also accessible in the [NRC_binary_and_weighted_Network_Reciprocity_Control](https://github.com/m00rcheh/NRC_binary_and_weighted_Network_Reciprocity_Control) repository, were used to control the degree of asymmetry and reciprocity in both binary and weighted networks while preserving key network properties.
 
 
 ## Abstract
