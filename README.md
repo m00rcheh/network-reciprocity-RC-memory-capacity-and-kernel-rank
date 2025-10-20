@@ -8,7 +8,7 @@ The NRC algorithms, available in the utils directory and also accessible in the 
 ## Abstract
 Cerebral cortical networks in the mammalian brain exhibit a non-random organization that systematically avoids strong reciprocal projections, particularly in sensory hierarchies. This “no-strong-loops” principle is thought to prevent runaway excitation and maintain stability, yet its computational impact remains unclear. Here, we use computational analysis and modeling to show that connectivity asymmetry supports high working-memory capacity, whereas increasing reciprocity reduces memory capacity and representational diversity in reservoir-computing models of recurrent neural networks. We systematically examine synthetic architectures inspired by mammalian cortical connectivity and find that sparse, modular, and hierarchical networks achieve superior performance, relative to random, small-world, or core-periphery graphs, but only when reciprocity is constrained. Validated on directed macaque and marmoset connectomes, these results indicate that restricting reciprocal motifs yields functional benefits in sparse networks, consistent with an evolutionary strategy for stable, efficient information processing in the brain. These findings suggest a biologically-inspired design principle for artificial neural systems.
 
-![Graphical Abstract](Figs/Main/Graphical%20abstract.jpg)
+![Graphical Abstract](Graphical%20abstract.jpg)
 
 
 ## Features
