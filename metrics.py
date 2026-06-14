@@ -22,37 +22,10 @@ Dependencies
     neurogym               — required only for evaluate_mante()
                              https://github.com/neurogym/neurogym
 
-Quick-start example
--------------------
-    import numpy as np
-    from metrics import compute_memory_capacity, compute_kernel_rank
-
-    rng = np.random.default_rng(0)
-    W   = rng.standard_normal((64, 64))
-    rho = np.max(np.abs(np.linalg.eigvals(W)))
-    W   = W / rho * 0.99          # normalise spectral radius to 0.99
-
-    mc = compute_memory_capacity(W)
-    kr = compute_kernel_rank(W)
-    print(f"MC = {mc:.3f}   KR = {kr}")
-
-Notes
------
-*  All functions operate on the weight matrix W directly.  Spectral
-   normalisation (scaling W so its spectral radius equals `spectral_radius`)
-   is performed internally; the caller's matrix is never modified.
-*  For the context-dependent decision-making task (evaluate_mante) the
-   spectral radius is set to 1.2 following Suárez et al. (2024), which
-   differs from the 0.99 default used for MC and KR.
-*  Reproducibility: pass an explicit `random_state` (int) to every
-   function.  Default values match those used in the paper.
-"""
-
-# ── Standard library ──────────────────────────────────────────────────────────
 import warnings
 warnings.filterwarnings("ignore")
 
-# ── Third-party ───────────────────────────────────────────────────────────────
+
 import numpy as np
 from scipy import linalg, stats
 from sklearn.linear_model import RidgeClassifier
@@ -68,26 +41,6 @@ except ImportError as _e:  # pragma: no cover
         "    pip install echoes\n"
         "or visit https://github.com/fabridamicelli/echoes"
     ) from _e
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# Shared internal utilities
-# ═════════════════════════════════════════════════════════════════════════════
-
-def _spectral_radius(W: np.ndarray) -> float:
-    """Return the spectral radius (largest absolute eigenvalue) of W."""
-    return float(np.max(np.abs(np.linalg.eigvals(W))))
-
-
-def _normalise_W(W: np.ndarray, target_rho: float) -> np.ndarray:
-    """
-    Return a copy of W scaled so its spectral radius equals `target_rho`.
-    Raises ValueError if W has a zero spectral radius.
-    """
-    rho = _spectral_radius(W)
-    if rho == 0:
-        raise ValueError("W has spectral radius 0 — cannot normalise.")
-    return W * (target_rho / rho)
 
 
 def _build_esn(
@@ -129,13 +82,12 @@ def _build_esn(
     return ESNRegressor(**kwargs)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# 1. Memory Capacity
-# ═════════════════════════════════════════════════════════════════════════════
+
+#  Memory Capacity
 
 def compute_memory_capacity(
     W: np.ndarray,
-    spectral_radius: float = 0.99,
+    spectral_radius: float = 0.95,
     sequence_length: int   = 3000,
     n_transient: int       = 100,
     w_in_scale: float      = 0.05,
@@ -153,16 +105,11 @@ def compute_memory_capacity(
     the actual and predicted delayed inputs over all lags (Jaeger 2001;
     Farkaš et al. 2016).
 
-    The network is normalised internally so its spectral radius equals
-    `spectral_radius`; the caller's matrix W is not modified.
 
     Parameters
     ----------
     W : ndarray, shape (N, N)
         Reservoir weight matrix (binary or weighted, directed).
-    spectral_radius : float, default 0.99
-        Target spectral radius after normalisation.  Values close to 1.0
-        place the network near the edge of stability, which maximises MC.
     sequence_length : int, default 3000
         Total length of the i.i.d. Gaussian input signal u(t) ~ N(0,1).
     n_transient : int, default 100
@@ -193,16 +140,11 @@ def compute_memory_capacity(
     rng = np.random.default_rng(random_state)
     N   = W.shape[0]
 
-    # ── 1. Normalise reservoir ────────────────────────────────────────────
-    W_scaled = _normalise_W(W, spectral_radius)
 
-    # ── 2. Input weight matrix: Uniform(−s, s), shape (N, 1) ─────────────
     W_in = rng.uniform(-w_in_scale, w_in_scale, size=(N, 1)).astype(float)
 
-    # ── 3. Generate i.i.d. Gaussian input signal ──────────────────────────
     u = rng.standard_normal(sequence_length)
 
-    # ── 4. Build delayed target matrix ───────────────────────────────────
     #   num_delays = floor(1.4 * N) following Farkaš et al. (2016)
     num_delays = int(np.floor(1.4 * N))
     Y = np.zeros((sequence_length, num_delays))
@@ -211,14 +153,12 @@ def compute_memory_capacity(
 
     X = u.reshape(-1, 1)
 
-    # ── 5. Train / test split (preserves temporal order) ─────────────────
     split = int(np.floor(train_fraction * sequence_length))
     X_train, X_test = X[:split], X[split:]
     Y_train, Y_test = Y[:split], Y[split:]
 
-    # ── 6. Fit ESN and predict ────────────────────────────────────────────
     esn = _build_esn(
-        W            = W_scaled,
+        W            = W.float(),
         W_in         = W_in,
         spectral_radius = spectral_radius,
         n_transient  = n_transient,
@@ -230,7 +170,6 @@ def compute_memory_capacity(
     esn.fit(X_train, Y_train)
     Y_pred = esn.predict(X_test)
 
-    # ── 7. MC = Σ_τ R²(y_τ, ŷ_τ), clipped to [0, ∞) ─────────────────────
     # Discard initial test steps that fall within the transient window
     offset  = esn.n_transient + 1
     Y_test_aligned  = Y_test[offset:]
@@ -245,15 +184,14 @@ def compute_memory_capacity(
     return round(mc, 4)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 # 2. Kernel Rank
-# ═════════════════════════════════════════════════════════════════════════════
+
 
 def compute_kernel_rank(
     W: np.ndarray,
-    spectral_radius: float = 0.99,
+    spectral_radius: float = 0.95,
     num_inputs: int        = None,
-    signal_length: int     = 200,
+    signal_length: int     = 500,
     n_transient: int       = 50,
     w_in_scale: float      = 0.05,
     svd_threshold: float   = 0.01,
@@ -315,21 +253,14 @@ def compute_kernel_rank(
 
     if num_inputs is None:
         num_inputs = N   # square state matrix as in the paper
+    W_in    = 
+               rng.uniform(-w_in_scale, w_in_scale, size=(N, 1)).astype(float)
 
-    # ── 1. Normalise reservoir ────────────────────────────────────────────
-    W_scaled = _normalise_W(W, spectral_radius)
-
-    # ── 2. Input weights: scaled by 0.5 * ρ(W_raw) ───────────────────────
-    #   This matches the paper's input-scaling convention for KR.
-    rho_raw = _spectral_radius(W)
-    W_in    = (0.5 * rho_raw *
-               rng.uniform(-w_in_scale, w_in_scale, size=(N, 1))).astype(float)
-
-    # ── 3. Warm-up ESN to trigger internal weight scaling ─────────────────
+    
     #   harvest_states() requires the internally scaled W from ESNRegressor.
     #   We fit on a dummy signal (length > n_transient) to trigger it.
     esn = _build_esn(
-        W               = W_scaled,
+        W               = W.float(),
         W_in            = W_in,
         spectral_radius = spectral_radius,
         n_transient     = n_transient,
@@ -342,12 +273,11 @@ def compute_kernel_rank(
     dummy = np.zeros((n_transient + 2, 1))
     esn.fit(dummy, dummy)
 
-    # ── 4. Extract low-level reservoir parameters for harvest_states ──────
+    
     res           = esn.reservoir_
     initial_state = np.zeros(N)
     y_dummy       = np.zeros((signal_length, 1))
 
-    # ── 5. Build state matrix: one column per input signal ────────────────
     state_matrix = np.zeros((N, num_inputs))
     for i in range(num_inputs):
         signal = rng.standard_normal(signal_length).reshape(-1, 1)
@@ -366,7 +296,7 @@ def compute_kernel_rank(
         # Take the final state after discarding the transient
         state_matrix[:, i] = states[n_transient:, :][-1, :]
 
-    # ── 6. SVD and threshold ──────────────────────────────────────────────
+   
     singular_values = linalg.svd(state_matrix, compute_uv=False)
     threshold       = singular_values[0] * svd_threshold
     kr              = int(np.count_nonzero(singular_values > threshold))
@@ -374,9 +304,8 @@ def compute_kernel_rank(
     return kr
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+
 # 3. NARMA Task (n = 5 or 10)
-# ═════════════════════════════════════════════════════════════════════════════
 
 def _generate_narma_sequence(
     sequence_length: int,
@@ -463,8 +392,6 @@ def compute_narma(
     after discarding `washout_test` initial test steps.  Values close to
     1.0 indicate accurate reproduction; values near 0 indicate failure.
 
-    The network is normalised internally so its spectral radius equals
-    `spectral_radius`; the caller's matrix W is not modified.
 
     Parameters
     ----------
@@ -513,10 +440,8 @@ def compute_narma(
     rng = np.random.default_rng(random_state)
     N   = W.shape[0]
 
-    # ── 1. Generate NARMA-n data ──────────────────────────────────────────
     u, y, _ = _generate_narma_sequence(sequence_length, n, seed=data_seed)
 
-    # ── 2. One-step alignment: input at t → predict output at t+1 ─────────
     u_in  = u[:-1].astype(np.float64)   # (T-1, 1)
     y_tgt = y[1:].astype(np.float64)    # (T-1, 1)
 
@@ -526,16 +451,12 @@ def compute_narma(
     u_test      = u_in[split:]
     y_test      = y_tgt[split:]
 
-    # ── 3. Normalise reservoir ────────────────────────────────────────────
-    W_scaled = _normalise_W(W, spectral_radius)
 
-    # ── 4. Input weight matrix ────────────────────────────────────────────
     W_in = (rng.uniform(-w_in_scale, w_in_scale, size=(N, 1))
             * input_scaling).astype(float)
 
-    # ── 5. Build ESN and collect states ───────────────────────────────────
     esn = _build_esn(
-        W               = W_scaled,
+        W               = W.float(),
         W_in            = W_in,
         spectral_radius = spectral_radius,
         n_transient     = n_transient,
@@ -551,7 +472,6 @@ def compute_narma(
     if not np.isfinite(y_pred).all():
         return float('nan')
 
-    # ── 6. Pearson r on test segment after washout ─────────────────────────
     y_test_aligned = y_test[washout_test:].ravel()
     y_pred_aligned = y_pred[washout_test:].ravel()
     n_aligned      = min(len(y_test_aligned), len(y_pred_aligned))
@@ -562,9 +482,8 @@ def compute_narma(
     return float(r)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+
 # 4. Context-Dependent Decision-Making Task (Mante et al. 2013)
-# ═════════════════════════════════════════════════════════════════════════════
 
 # Task constants (fixed, matching the paper)
 _MANTE_TASK_NAME   = 'ContextDecisionMaking-v0'
@@ -739,24 +658,17 @@ def evaluate_mante(
     rng = np.random.default_rng(random_state)
     N   = W.shape[0]
 
-    # ── 1. Generate task data ─────────────────────────────────────────────
     X, y = _generate_mante_data(n_trials, _MANTE_SEQ_LEN, seed=data_seed)
 
-    # ── 2. Train / test split (temporal order preserved) ──────────────────
     split = int(np.floor(train_fraction * len(X)))
     X_train, X_test = X[:split], X[split:]
     y_train, y_test = y[:split], y[split:]
 
-    # ── 3. Normalise reservoir ────────────────────────────────────────────
-    W_scaled = _normalise_W(W, spectral_radius)
-
-    # ── 4. Input weight matrix: shape (N, 7) ──────────────────────────────
     W_in = (rng.uniform(-w_in_scale, w_in_scale, size=(N, _MANTE_N_INPUTS))
             * input_scaling).astype(float)
 
-    # ── 5. Collect reservoir states ───────────────────────────────────────
     states_train, states_test = _collect_reservoir_states(
-        W               = W_scaled,
+        W               = W,
         W_in            = W_in,
         X_train         = X_train,
         X_test          = X_test,
@@ -771,14 +683,11 @@ def evaluate_mante(
             not np.isfinite(states_test).all()):
         return float('nan'), float('nan')
 
-    # ── 6. Build feature matrices [states | inputs] ───────────────────────
     features_train = np.concatenate([states_train, X_train], axis=1)
     features_test  = np.concatenate([states_test,  X_test],  axis=1)
 
-    # ── 7. Align training labels with stored states (discard transient) ───
     y_train_aligned = y_train[_MANTE_N_TRANSIENT:]
 
-    # ── 8. Decision-period mask: keep only labels 1 (left) and 2 (right) ─
     #   Fixation timesteps (label 0) are excluded from both train and test.
     train_mask = (y_train_aligned == 1) | (y_train_aligned == 2)
     test_mask  = (y_test          == 1) | (y_test          == 2)
@@ -788,7 +697,6 @@ def evaluate_mante(
     features_test_dec  = features_test[test_mask]
     y_test_dec         = y_test[test_mask]
 
-    # ── 9. Train RidgeClassifier and evaluate ─────────────────────────────
     clf = RidgeClassifier(alpha=clf_ridge_alpha)
     clf.fit(features_train_dec, y_train_dec)
     y_pred = clf.predict(features_test_dec)
@@ -812,33 +720,28 @@ if __name__ == '__main__':
     N   = 64
     W   = rng.standard_normal((N, N))
 
-    # Spectral normalisation: scale so ρ(W) = 0.99
-    rho = float(np.max(np.abs(np.linalg.eigvals(W))))
-    W   = W / rho * 0.99
 
-    print(f"  N = {N},  spectral radius = {_spectral_radius(W):.4f}\n")
-
-    # ── Memory Capacity ───────────────────────────────────────────────────
+    # ── Memory Capacity
     print("Computing Memory Capacity …")
     mc = compute_memory_capacity(W, random_state=0)
     print(f"  MC = {mc:.4f}   (theoretical max ≈ {N})\n")
 
-    # ── Kernel Rank ───────────────────────────────────────────────────────
+    # ── Kernel Rank 
     print("Computing Kernel Rank …")
     kr = compute_kernel_rank(W, random_state=0)
     print(f"  KR = {kr}   (theoretical max = {N})\n")
 
-    # ── NARMA-5 ───────────────────────────────────────────────────────────
+    # ── NARMA-5 
     print("Running NARMA-5 …")
     r5 = compute_narma(W, n=5, random_state=0, data_seed=0)
     print(f"  Pearson r = {r5:.4f}\n")
 
-    # ── NARMA-10 ──────────────────────────────────────────────────────────
+    # ── NARMA-10 
     print("Running NARMA-10 …")
     r10 = compute_narma(W, n=10, random_state=0, data_seed=0)
     print(f"  Pearson r = {r10:.4f}\n")
 
-    # ── Mante task (skipped if neurogym not installed) ────────────────────
+    # ── Mante task (skipped if neurogym not installed) 
     try:
         import neurogym  # noqa: F401
         print("Running Mante context-dependent decision-making task …")
